@@ -44,8 +44,8 @@ struct TaskManagerInner {
     current_task: usize,
 }
 lazy_static! {
-    static ref TASK_MANAGER: UPSafeCell<TaskManager> = unsafe {
-        UPSafeCell::new({
+    static ref TASK_MANAGER: TaskManager = unsafe {
+        {
             extern "C" {
                 fn _num_app();
             }
@@ -63,7 +63,7 @@ lazy_static! {
                     ));
                 tasks[i].context = TaskContext::goto_restore(kstack_ptr as * const _ as usize);
             }
-            let current_task = 2;
+            let current_task = 0;
             println!("222");
             TaskManager {
                 num_app,
@@ -72,7 +72,7 @@ lazy_static! {
                     current_task,
                 }),
             }
-        })
+        }
     };
 }
 
@@ -84,18 +84,77 @@ impl TaskManager {
         let next_task_cx_ptr = &task0.context as *const TaskContext;
 
         let mut _unused = TaskContext::zero_init();
+        //这部分需要研究
+        drop(inner);
+
         unsafe {
             __switch(& mut _unused as *mut TaskContext, next_task_cx_ptr);
         }
     }
-    // pub fn find_next_task(&self) -> usize{
-    //     let mut inner = self.inner.exclusive_access();
-    //     let current = inner.current_task;
+    pub fn find_next_task(&self) -> Option<usize>{
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        for i in current+1..current+self.num_app+1{
+            let index = i%self.num_app;
+            let task = inner.tasks[index];
+            if task.task_status == TaskStatus::Ready{
+                return Some(index);
+            }
+        }
+        return None;
 
-    // }
+    }
+    pub fn run_next_task(&self){
+        
+        
+        if let Some(index) = self.find_next_task(){
+            let mut inner = self.inner.exclusive_access();
+            let current = inner.current_task;
+            let mut current_task_cx_ptr = & mut inner.tasks[current].context as *mut TaskContext;
+            let next_task_cx_ptr = &inner.tasks[index].context as * const TaskContext;
+            inner.tasks[index].task_status = TaskStatus::Running;
+            inner.current_task = index;
+
+            drop(inner);
+
+            unsafe {
+                __switch(current_task_cx_ptr, next_task_cx_ptr);
+            }
+        }else{
+            println!("no task in ready");
+        }
+        
+    }
+    pub fn mark_current_ready(&self){
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].task_status = TaskStatus::Ready;
+    }
+    pub fn mark_current_exit(&self){
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].task_status = TaskStatus::Exited;
+    }
 }
 
 pub fn run_first_task(){
-    TASK_MANAGER.exclusive_access().run_first_task();
+    TASK_MANAGER.run_first_task();
+}
+pub fn mark_exit(){
+    TASK_MANAGER.mark_current_exit();
+}
+pub fn mark_ready(){
+    TASK_MANAGER.mark_current_ready();
+}
+pub fn run_next_task(){
+    TASK_MANAGER.run_next_task();
+}
+pub fn suspend_current_run_next(){
+    mark_ready();
+    run_next_task();
+}
+pub fn exit_current_run_next(){
+    mark_exit();
+    run_next_task();
 }
 // pub use run_first_task;

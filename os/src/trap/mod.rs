@@ -1,9 +1,10 @@
 mod context;
-use crate::batch::run_next_app;
+use crate::task::exit_current_run_next;
+use crate::{batch::run_next_app, task::suspend_current_run_next};
 use crate::syscall::syscall;
 use riscv::register::{
     mtvec::TrapMode,
-    scause::{self, Exception, Trap},
+    scause::{self, Exception, Trap,Interrupt},
     stval, stvec, sepc,
 };
 use crate::timer::set_next_trigger;
@@ -30,11 +31,16 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
         Trap::Exception(Exception::StoreFault) |
         Trap::Exception(Exception::StorePageFault) => {
             println!("[kernel] PageFault in application, kernel killed it.{}",sepc);
-            run_next_app();
+            exit_current_run_next()
         }
         Trap::Exception(Exception::IllegalInstruction) => {
             println!("[kernel] IllegalInstruction in application, kernel killed it.");
-            run_next_app();
+            exit_current_run_next();
+        }
+        Trap::Interrupt(Interrupt::SupervisorTimer) =>{
+            println!("time interrupt");
+            set_next_trigger();
+            suspend_current_run_next();
         }
         // Trap::Interrupt(Interrupt::SupervisorTimer) => {
         //     set_next_trigger();
