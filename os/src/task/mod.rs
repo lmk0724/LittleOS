@@ -1,16 +1,26 @@
 use crate::{
     batch::{KernelStack, UserStack},
-    config::MAX_APP_NUM,
-    sync::UPSafeCell, println,
+    config::{MAX_APP_NUM, MAX_SYSCALL_NUM, CLOCK_FREQ, MICRO_PER_SEC},
+    sync::UPSafeCell, println, timer::get_time, syscall::TaskInfo,
 };
 
-use self::{context::TaskContext, switch::__switch, task::TaskStatus};
+use self::{context::TaskContext, switch::__switch};
 use crate::config::{USER_STACK_SIZE,KERNEL_STACK_SIZE,APP_BASE_ADDRESS,APP_SIZE_LIMIT};
 use lazy_static::*;
 use crate::trap::TrapContext;
 mod context;
 mod switch;
-mod task;
+// mod task;
+// pub use task::TaskStatus;
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum TaskStatus {
+    UnInit, // 未初始化
+    Ready, // 准备运行
+    Running, // 正在运行
+    Exited, // 已退出
+}
+
 #[derive(Clone, Copy)]
 pub struct TaskControlBlock {
     pub context: TaskContext,
@@ -18,18 +28,22 @@ pub struct TaskControlBlock {
 
     pub kernelStack: KernelStack,
     pub userStack: UserStack,
+    pub syscall_times: [u32; MAX_SYSCALL_NUM],
+    pub start_time: usize,
 }
 impl TaskControlBlock {
     pub fn new() -> Self {
         Self {
             context: TaskContext::zero_init(),
-            task_status: TaskStatus::Ready,
+            task_status: TaskStatus::UnInit,
             kernelStack: KernelStack {
                 data: [0; KERNEL_STACK_SIZE],
             },
             userStack: UserStack {
                 data: [0; USER_STACK_SIZE],
             },
+            syscall_times: [0u32;MAX_SYSCALL_NUM],
+            start_time: 0,
         }
     }
 }
@@ -53,6 +67,7 @@ lazy_static! {
             let num_app = num_app_ptr.read_volatile();
             println!("num app {}",num_app);
             let mut tasks = [TaskControlBlock::new(); MAX_APP_NUM];
+            println!("333");
             for i in 0..num_app {
                 // println!("init {}", APP_BASE_ADDRESS + i * APP_SIZE_LIMIT);
                 let kstack_ptr = tasks[i]
@@ -62,6 +77,9 @@ lazy_static! {
                         tasks[i].userStack.get_sp(),
                     ));
                 tasks[i].context = TaskContext::goto_restore(kstack_ptr as * const _ as usize);
+                tasks[i].start_time = get_time();
+                tasks[i].task_status = TaskStatus::Ready;
+                println!("444");
             }
             let current_task = 0;
             println!("222");
@@ -105,8 +123,6 @@ impl TaskManager {
 
     }
     pub fn run_next_task(&self){
-        
-        
         if let Some(index) = self.find_next_task(){
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
@@ -135,6 +151,29 @@ impl TaskManager {
         let current = inner.current_task;
         inner.tasks[current].task_status = TaskStatus::Exited;
     }
+    pub fn update_syscall_arr(&self, sys_id:usize){
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].syscall_times[sys_id] += 1;
+    }
+    pub fn set_task_info(&self, ti: *mut TaskInfo){
+        // ti.status = TaskStatus::Running;
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let sys_arr = inner.tasks[current].syscall_times.clone();
+        // ti.syscall_times = sys_arr;
+        let current_time = get_time();
+        let start_time = inner.tasks[current].start_time;
+        let time = (current_time-start_time)/CLOCK_FREQ * MICRO_PER_SEC /1000;
+        unsafe{
+            *ti = TaskInfo{
+                status : TaskStatus::Running,
+                syscall_times : sys_arr,
+                time: time,
+            };
+        }
+
+    }
 }
 
 pub fn run_first_task(){
@@ -157,4 +196,10 @@ pub fn exit_current_run_next(){
     mark_exit();
     run_next_task();
 }
-// pub use run_first_task;
+pub fn update_syscall_arr(sys_id: usize){
+    TASK_MANAGER.update_syscall_arr(sys_id);
+}
+pub fn set_task_info(ti: *mut TaskInfo){
+    TASK_MANAGER.set_task_info(ti);
+}
+
