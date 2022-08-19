@@ -8,8 +8,9 @@ app_id = 0
 apps = os.listdir('src/bin')
 apps.sort()
 print(apps)
+os.system("cargo clean")
 for app in apps:
-    if app.startswith("ch2b_p"):
+    if  app.startswith("ch3"):
         app = app[:app.find('.')]
         lines = []
         lines_before = []
