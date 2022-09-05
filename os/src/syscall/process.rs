@@ -1,6 +1,6 @@
 use crate::config::MICRO_PER_SEC;
 use crate::println;
-use crate::batch::run_next_app;
+// use crate::batch::run_next_app;
 use crate::task::{exit_current_run_next, suspend_current_run_next, set_task_info};
 use crate::timer::{TimeVal, get_time_us, get_time};
 

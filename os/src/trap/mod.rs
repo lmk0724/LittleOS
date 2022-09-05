@@ -1,6 +1,9 @@
 mod context;
-use crate::task::exit_current_run_next;
-use crate::{batch::run_next_app, task::suspend_current_run_next};
+
+
+use crate::config::{TRAMPOLINE, TRAP_CONTEXT};
+use crate::task::{exit_current_run_next, current_trap_cx, current_user_token};
+use crate::{task::suspend_current_run_next};
 use crate::syscall::syscall;
 use riscv::register::{
     mtvec::TrapMode,
@@ -18,11 +21,29 @@ pub fn init() {
         stvec::write(__alltraps as usize, TrapMode::Direct);
     }
 }
+fn set_kernel_trap_entry() {
+    unsafe {
+        stvec::write(trap_from_kernel as usize, TrapMode::Direct);
+    }
+}
+fn set_user_trap_entry() {
+    unsafe {
+        stvec::write(TRAMPOLINE as usize, TrapMode::Direct);
+    }
+}
 #[no_mangle]
-pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
+pub fn trap_from_kernel() -> ! {
+    panic!("a trap from kernel!");
+}
+#[no_mangle]
+pub fn trap_handler() -> ! {
+    // let scause = scause::read();
+    // let stval = stval::read();
+    // let sepc = sepc::read();
+    set_kernel_trap_entry();
+    let cx = current_trap_cx();
     let scause = scause::read();
     let stval = stval::read();
-    let sepc = sepc::read();
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
             cx.sepc += 4;
@@ -30,7 +51,7 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
         }
         Trap::Exception(Exception::StoreFault) |
         Trap::Exception(Exception::StorePageFault) => {
-            println!("[kernel] PageFault in application, kernel killed it.{}",sepc);
+            // println!("[kernel] PageFault in application, kernel killed it.{}",sepc);
             exit_current_run_next()
         }
         Trap::Exception(Exception::IllegalInstruction) => {
@@ -50,8 +71,33 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
             panic!("Unsupported trap {:?}, stval = {:#x}!", scause.cause(), stval);
         }
     }
-    cx
+    trap_return();
+    // cx
 }
+#[no_mangle]
+pub fn trap_return() -> ! {
+    // println!("trap return during the switch tasks");
+    set_user_trap_entry();
+    let trap_cx_ptr = TRAP_CONTEXT;
+    let user_satp = current_user_token();
+    extern "C" {
+        fn __alltraps();
+        fn __restore();
+    }
+    let restore_va = __restore as usize - __alltraps as usize + TRAMPOLINE;
+    unsafe {
+        core::arch::asm!(
+            "fence.i",
+            "jr {restore_va}",
+            restore_va = in(reg) restore_va,
+            in("a0") trap_cx_ptr,
+            in("a1") user_satp,
+            options(noreturn)
+        );
+    }
+    // println!("trap return conplete during the switch tasks");
+}
+
 pub use context::TrapContext;
 use riscv::register::sie;
 
