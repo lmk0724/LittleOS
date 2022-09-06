@@ -10,7 +10,7 @@ apps.sort()
 print(apps)
 os.system("cargo clean")
 for app in apps:
-    if  app.startswith("ch2b_p"):
+    if  app.startswith("ch4"):
         app = app[:app.find('.')]
         # lines = []
         # lines_before = []
@@ -29,3 +29,4 @@ for app in apps:
         app_id = app_id + 1 
     else:
         continue
+os.system("cd target/riscv64gc-unknown-none-elf/release/ && rm -f *.d && ls")

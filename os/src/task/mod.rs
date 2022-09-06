@@ -1,5 +1,7 @@
 
 
+// use std::fs::Permissions;
+
 use crate::{
     batch::{KernelStack, UserStack},
     config::{
@@ -7,7 +9,7 @@ use crate::{
         TRAP_CONTEXT,
     },
     loader::get_app_data,
-    mm::{MapPermission, MemorySet, PhysPageNum, KERNEL_SPACE, VirtAddr},
+    mm::{MapPermission, MemorySet, PhysPageNum, KERNEL_SPACE, VirtAddr, VirtPageNum},
     println,
     sync::UPSafeCell,
     syscall::TaskInfo,
@@ -40,7 +42,7 @@ pub struct TaskControlBlock {
     pub task_status: TaskStatus,
 
     // pub kernelStack: KernelStack,
-    pub userStack: UserStack,
+    // pub userStack: UserStack,
     pub syscall_times: [u32; MAX_SYSCALL_NUM],
     pub start_time: usize,
 
@@ -70,9 +72,9 @@ impl TaskControlBlock {
             // kernelStack: KernelStack {
             //     data: [0; KERNEL_STACK_SIZE],
             // },
-            userStack: UserStack {
-                data: [0; USER_STACK_SIZE],
-            },
+            // userStack: UserStack {
+            //     data: [0; USER_STACK_SIZE],
+            // },
             syscall_times: [0u32; MAX_SYSCALL_NUM],
             start_time: 0,
             memory_set: memory_set,
@@ -80,6 +82,7 @@ impl TaskControlBlock {
             base_size: user_sp,
         };
         let trap_cx = task_control_block.get_trap_cx();
+
         *trap_cx = TrapContext::app_init_context(
             entry_point,
             user_sp,
@@ -241,6 +244,28 @@ impl TaskManager {
         let current = inner.current_task;
         inner.tasks[current].get_trap_cx()
     }
+    fn translate_vpn(&self, vpn:VirtPageNum)-> PhysPageNum{
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let current_memory = &inner.tasks[current].memory_set;
+        let ppn = current_memory.translate(vpn).unwrap().ppn();
+        return ppn;
+    }
+    fn mmap(&self,start_va:VirtAddr,end_va:VirtAddr, permission: MapPermission){
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].memory_set.insert_framed_area(start_va, end_va, permission);
+    }
+    fn m_unmap(&self, start_vpn: VirtPageNum, end_vpn: VirtPageNum)-> isize{
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].memory_set.unmap(start_vpn, end_vpn)
+    }
+    fn contains_key(&self, vpn : &VirtPageNum) -> bool{
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].memory_set.contains_key(vpn)
+    }
 }
 
 pub fn run_first_task() {
@@ -274,4 +299,16 @@ pub fn current_user_token() -> usize{
 }
 pub fn current_trap_cx() -> &'static mut TrapContext {
     TASK_MANAGER.get_current_trap_cx()
+}
+pub fn translate_vpn(vpn : VirtPageNum)-> PhysPageNum{
+    TASK_MANAGER.translate_vpn(vpn)
+}
+pub fn mmap(start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission){
+    TASK_MANAGER.mmap(start_va, end_va, permission)
+}
+pub fn m_unmap(start_vpn: VirtPageNum, end_vpn: VirtPageNum)-> isize {
+    TASK_MANAGER.m_unmap(start_vpn, end_vpn)
+}
+pub fn contains_key(vpn: &VirtPageNum) -> bool{
+    TASK_MANAGER.contains_key(vpn)
 }

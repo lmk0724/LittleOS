@@ -54,3 +54,20 @@ pub fn sys_get_time(time: &TimeVal, tz: usize) -> isize {
 pub fn sys_task_info(info: &TaskInfo) -> isize {
     syscall(SYSCALL_TASK_INFO, [info as *const _ as usize, 0, 0])
 }
+//第四章
+
+pub const SYSCALL_SET_PRIORITY: usize = 140;
+pub const SYSCALL_MUNMAP: usize = 215;
+pub const SYSCALL_MMAP: usize = 222;
+
+pub fn sys_set_priority(prio: isize) -> isize {
+    syscall(SYSCALL_SET_PRIORITY, [prio as usize, 0, 0])
+}
+
+pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
+    syscall(SYSCALL_MMAP, [start, len, prot])
+}
+
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    syscall(SYSCALL_MUNMAP, [start, len, 0])
+}

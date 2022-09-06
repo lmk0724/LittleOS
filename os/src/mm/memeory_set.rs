@@ -1,4 +1,5 @@
 use alloc::{collections::BTreeMap, vec::Vec};
+use xmas_elf::program::Flags;
 
 use core::arch::asm;
 use crate::{
@@ -106,6 +107,9 @@ impl MapArea {
             }
             current_vpn.step();
         }
+    }
+    pub fn contains_key(&self, vpn:&VirtPageNum)-> bool{
+        self.vpn_range.get_end().0 > vpn.0 && self.vpn_range.get_start().0 <= vpn.0
     }
 }
 extern "C" {
@@ -285,6 +289,7 @@ impl MemorySet {
         );
         // map TrapContext
         // 这里有什么不同吗？
+        //为trap context申请内存
         memory_set.push(
             MapArea::new(
                 TRAP_CONTEXT.into(),
@@ -314,6 +319,36 @@ impl MemorySet {
     }
     pub fn token(&self) -> usize{
         self.page_table.token()
+    }
+    pub fn unmap(&mut self, _start :VirtPageNum, _end: VirtPageNum)-> isize{
+        let l = self.areas.len();
+        let mut index = 0;
+        let mut flag = false;
+        for i in 0..l{
+            if self.areas[i].vpn_range.get_start().0== _start.0 && self.areas[i].vpn_range.get_end().0== _end.0{
+                index = i;
+                flag = true;
+                break;
+            }
+        }
+        if flag{
+            self.areas.remove(index);
+            for i in _start.0.._end.0{
+                self.page_table.unmap(VirtPageNum(i));
+            }
+            return 0;
+        }else{
+            return -1;
+        }
+    }
+    pub fn contains_key(&self, vpn: &VirtPageNum) -> bool{
+        let mut result = false;
+        let l = self.areas.len();
+        for i in 0..l{
+            let res = self.areas[i].contains_key(vpn);
+            result = result | res;
+        }
+        return result;
     }
 }
 use crate::sync::UPSafeCell;

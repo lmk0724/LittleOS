@@ -60,4 +60,5 @@ pub fn remap_test(){
 pub use memeory_set::MemorySet;
 pub use address::PhysPageNum;
 pub use address::PhysAddr;
+pub use address::VirtPageNum;
 pub use page_table::translated_byte_buffer;

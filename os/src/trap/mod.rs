@@ -50,7 +50,8 @@ pub fn trap_handler() -> ! {
             cx.x[10] = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]) as usize;
         }
         Trap::Exception(Exception::StoreFault) |
-        Trap::Exception(Exception::StorePageFault) => {
+        Trap::Exception(Exception::StorePageFault) |
+        Trap::Exception(Exception::LoadPageFault) => {
             // println!("[kernel] PageFault in application, kernel killed it.{}",sepc);
             exit_current_run_next()
         }
